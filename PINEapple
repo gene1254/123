@@ -1,0 +1,56 @@
+import org.opencv.core.*;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+import java.util.ArrayList;
+import java.util.List;
+
+public class PineappleCounter {
+    static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
+
+    public static void main(String[] args) {
+        // 1. 讀取圖片
+        Mat src = Imgcodecs.imread("0001.jpg");
+        if (src.empty()) {
+            System.out.println("找不到圖片！");
+            return;
+        }
+
+        // 2. 轉換為 HSV 色彩空間
+        Mat hsv = new Mat();
+        Imgproc.cvtColor(src, hsv, Imgproc.COLOR_BGR2HSV);
+
+        // 3. 定義鳳梨中心（紅褐色/紫色）的 HSV 範圍
+        // 注意：這些數值需要根據實際光影微調
+        Scalar lowerBound = new Scalar(0, 50, 20);   // 低門檻
+        Scalar upperBound = new Scalar(20, 255, 200); // 高門檻 (針對紅褐色)
+
+        Mat mask = new Mat();
+        Core.inRange(hsv, lowerBound, upperBound, mask);
+
+        // 4. 去除雜訊（形態學操作）
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, new Size(5, 5));
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_OPEN, kernel);
+
+        // 5. 尋找輪廓
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+        // 6. 過濾面積過小的點（避免雜點）並計數
+        int count = 0;
+        for (MatOfPoint contour : contours) {
+            double area = Imgproc.contourArea(contour);
+            if (area > 50) { // 根據圖片解析度調整最小面積
+                count++;
+                // 在原圖畫圈標記，方便驗證
+                Rect rect = Imgproc.boundingRect(contour);
+                Imgproc.rectangle(src, rect, new Scalar(0, 255, 0), 2);
+            }
+        }
+
+        System.out.println("偵測到的鳳梨總數: " + count);
+        
+        // 儲存結果圖
+        Imgcodecs.imwrite("result.jpg", src);
+    }
+}
