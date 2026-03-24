@@ -1,0 +1,163 @@
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.LinkedList;
+import java.util.Queue;
+import javax.imageio.ImageIO;
+
+public class PineappleCounterEnhanced {
+
+    public static void main(String[] args) {
+        try {
+            // 1. 讀取圖片 (請確保檔名正確)
+            File inputFile = new File("0001.jpg");
+            BufferedImage image = ImageIO.read(inputFile);
+            int width = image.getWidth();
+            int height = image.getHeight();
+
+            boolean[][] visited = new boolean[width][height];
+            int pineappleCount = 0;
+
+            // 預先計算整張圖的平均亮度，用於陰影補償 (可選，這裡先簡單處理)
+            
+            // 2. 遍歷每一個像素
+             for(int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    // 如果該點還沒被算過，且符合嚴格的鳳梨中心顏色特徵
+                    if (!visited[x][y] && isPineappleCenterEnhanced(image, x, y)) {
+                        
+                        // 發現可能的鳳梨，啟動 BFS 標記整顆
+                        ClusterInfo info = markCluster(image, visited, x, y);
+                        
+                        // --- 進階過濾 ---
+                        // 1. 基本大小過濾：鳳梨中心不能太小 (至少要 10x10 的感覺)
+                        if (info.size < 80) continue;
+
+                        // 2. 形狀過濾：鳳梨中心是圓的，長寬比不應太大
+                        int boxWidth = info.maxX - info.minX;
+                        int boxHeight = info.maxY - info.minY;
+                        if (boxWidth == 0 || boxHeight == 0) continue;
+                        double aspectRatio = (double) Math.max(boxWidth, boxHeight) / Math.min(boxWidth, boxHeight);
+                        if (aspectRatio > 2.5) continue; // 排除長條狀的誤報
+
+                        pineappleCount++;
+                    }
+                }
+            }
+
+            System.out.println("偵測到的鳳梨總數估計為: " + pineappleCount);
+
+        } catch (Exception e) {
+            System.out.println("錯誤: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 加強版鳳梨中心判斷：
+     * 1. 使用 HSL 顏色空間，排除亮部 (葉尖)。
+     * 2. 局部亮度檢查，防止陰影區的大量誤報。
+     */
+    private static boolean isPineappleCenterEnhanced(BufferedImage img, int x, int y) {
+        Color color = new Color(img.getRGB(x, y));
+        float[] hsl = new float[3];
+        rgbToHsl(color, hsl);
+
+        float hue = hsl[0];        // 0.0 ~ 1.0 (代表 0° ~ 360°)
+        float saturation = hsl[1]; // 0.0 ~ 1.0
+        float lightness = hsl[2];  // 0.0 ~ 1.0
+
+        // --- 核心條件 ---
+
+        // 條件 1: 亮度不能太高 (高亮度通常是明亮的葉尖)
+        if (lightness > 0.399f) return false;
+
+        // 條件 2: 亮度不能太低 (低亮度可能是深色陰影)
+        if (lightness < 0.15f) return false;
+
+        // 條件 3: 顏色範圍 (目標是那些紅紫色的中心)
+        // 觀察圖中中心偏向紅褐色/紫褐色，Hue 在 300°(0.83) 到 360°/0°(1.0/0.0) 之間，或是極小的紅色 0.0 ~ 0.05
+        boolean isHueRange = (hue > 0.82f) || (hue < 0.08f);
+        if (!isHueRange) return false;
+
+        // 條件 4: 飽和度判斷 (排除過於死板的灰色/土色)
+        if (saturation < 0.15f) return false;
+
+        return true;
+    }
+
+    // 用於記錄 BFS 資訊的內部類別
+    static class ClusterInfo {
+        int size = 0;
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+    }
+
+    private static ClusterInfo markCluster(BufferedImage img, boolean[][] visited, int startX, int startY) {
+        ClusterInfo info = new ClusterInfo();
+        int width = img.getWidth();
+        int height = img.getHeight();
+        Queue<int[]> queue = new LinkedList<>();
+        
+        queue.add(new int[]{startX, startY});
+        visited[startX][startY] = true;
+
+        while (!queue.isEmpty()) {
+            int[] pos = queue.poll();
+            int px = pos[0];
+            int py = pos[1];
+            info.size++;
+            info.minX = Math.min(info.minX, px);
+            info.minY = Math.min(info.minY, py);
+            info.maxX = Math.max(info.maxX, px);
+            info.maxY = Math.max(info.maxY, py);
+
+            int[][] neighbors = {{0,1}, {0,-1}, {1,0}, {-1,0}};
+            for (int[] n : neighbors) {
+                int nx = px + n[0];
+                int ny = py + n[1];
+
+                // BFS 過程中，顏色判斷可以稍微寬鬆一點點，允許 cluster 內部的顏色變化
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height 
+                    && !visited[nx][ny] && isPineappleCenterEnhanced(img, nx, ny)) {
+                    visited[nx][ny] = true;
+                    queue.add(new int[]{nx, ny});
+                }
+            }
+        }
+        return info;
+    }
+
+    /**
+     * RGB 轉 HSL 輔助函式
+     * HSL 對於區分「顏色」與「明暗」比 RGB 效果好得多。
+     */
+    private static void rgbToHsl(Color color, float[] hsl) {
+        float r = color.getRed() / 255.0f;
+        float g = color.getGreen() / 255.0f;
+        float b = color.getBlue() / 255.0f;
+
+        float max = Math.max(r, Math.max(g, b));
+        float min = Math.min(r, Math.min(g, b));
+        float d = max - min;
+
+        float h = 0, s = 0, l = (max + min) / 2.0f;
+
+        if (max == min) {
+            h = s = 0; // achromatic
+        } else {
+            if (l > 0.5f) s = d / (2.0f - max - min);
+            else s = d / (max + min);
+
+            if (max == r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max == g) h = (b - r) / d + 2;
+            else if (max == b) h = (r - g) / d + 4;
+            h /= 6.0f;
+        }
+        hsl[0] = h;
+        hsl[1] = s;
+        hsl[2] = l;
+    }
+}
