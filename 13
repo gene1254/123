@@ -1,0 +1,92 @@
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import javax.imageio.ImageIO;
+import java.util.LinkedList;
+import java.util.Queue;
+
+public class PineappleCounterNative {
+
+    public static void main(String[] args) {
+        try {
+            // 1. 讀取圖片
+            File inputFile = new File("0001.jpg");
+            BufferedImage image = ImageIO.read(inputFile);
+            int width = image.getWidth();
+            int height = image.getHeight();
+
+            // 用於記錄該像素是否已被處理過（避免重複計算同一個鳳梨）
+            boolean[][] visited = new boolean[width][height];
+            int pineappleCount = 0;
+
+            // 2. 遍歷每一個像素
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    // 如果該點還沒被算過，且顏色符合鳳梨中心的「紅褐色/暗紫色」
+                    if (!visited[x][y] && isPineappleColor(image.getRGB(x, y))) {
+                        // 發現一個新的鳳梨區塊，啟動 BFS (廣度優先搜索) 將整顆鳳梨標記為已訪問
+                        int clusterSize = markCluster(image, visited, x, y);
+                        
+                        // 過濾掉太小的雜訊點（例如只有幾個像素的紅點）
+                        if (clusterSize > 50) { 
+                            pineappleCount++;
+                        }
+                    }
+                }
+            }
+
+            System.out.println("偵測到的鳳梨總數估計為: " + pineappleCount);
+
+        } catch (Exception e) {
+            System.out.println("錯誤: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 判斷像素顏色是否屬於鳳梨中心
+     * 根據這張圖，鳳梨中心通常 R > G 且 B 較低
+     */
+    private static boolean isPineappleColor(int rgb) {
+        Color color = new Color(rgb);
+        int r = color.getRed();
+        int g = color.getGreen();
+        int b = color.getBlue();
+
+        // 這裡的數值是根據圖片目測的經驗值，可能需要根據亮度微調
+        // 鳳梨中心呈現深紅色或紫褐色：紅高、綠低、藍中等
+        return (r > 80 && r < 180) && (g < 100) && (r > g + 20);
+    }
+
+    /**
+     * 使用 BFS 演算法將相鄰的鳳梨像素全部標記為 visited
+     * 返回該區塊的總像素數量
+     */
+    private static int markCluster(BufferedImage img, boolean[][] visited, int startX, int startY) {
+        int size = 0;
+        int width = img.getWidth();
+        int height = img.getHeight();
+        Queue<int[]> queue = new LinkedList<>();
+        
+        queue.add(new int[]{startX, startY});
+        visited[startX][startY] = true;
+
+        while (!queue.isEmpty()) {
+            int[] pos = queue.poll();
+            size++;
+
+            // 檢查上下左右 4 個鄰近像素
+            int[][] neighbors = {{0,1}, {0,-1}, {1,0}, {-1,0}};
+            for (int[] n : neighbors) {
+                int nx = pos[0] + n[0];
+                int ny = pos[1] + n[1];
+
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height 
+                    && !visited[nx][ny] && isPineappleColor(img.getRGB(nx, ny))) {
+                    visited[nx][ny] = true;
+                    queue.add(new int[]{nx, ny});
+                }
+            }
+        }
+        return size;
+    }
+}
